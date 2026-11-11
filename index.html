@@ -48,7 +48,7 @@ requestAnimationFrame(()=>document.querySelectorAll('.fill').forEach(e=>e.style.
 function monthButtons(){let months=[...new Set(records.map(r=>r.month))].sort((a,b)=>monthKey(a)-monthKey(b));let all=selected.size===months.length;let chosen=months.filter(m=>selected.has(m));$('months').innerHTML=`<button class="month ${all?'active':''}" data-all="1">All Months</button><button class="month mode ${multiMode?'active':''}" data-multi="1">${multiMode?'✓ Multi-Month Selection':'Select Multiple Months'}</button>`+months.map(m=>`<button class="month ${selected.has(m)?'active':''}" data-month="${esc(m)}" aria-pressed="${selected.has(m)}">${multiMode?(selected.has(m)?'☑ ':'☐ '):''}${esc(m)}</button>`).join('');$('periodInfo').textContent=all?'Report: All '+months.length+' months':`Report: ${chosen.length} selected month${chosen.length===1?'':'s'} · ${chosen.join(' + ')}`;$('months').querySelectorAll('button').forEach(b=>b.onclick=()=>{if(b.dataset.all){selected=new Set(months);multiMode=false}else if(b.dataset.multi){multiMode=!multiMode;if(multiMode&&all)selected=new Set()}else{let m=b.dataset.month;if(multiMode){if(selected.has(m))selected.delete(m);else selected.add(m)}else selected=new Set([m])}monthButtons();render()})}
 async function load(file){if(!window.XLSX){$('syncStatus').textContent='Excel library requires internet access.';return}try{let wb=XLSX.read(await file.arrayBuffer(),{type:'array'}),out=[];for(let name of wb.SheetNames){if(/^(January|February|March|April|May|June|July|August|September|October|November|December)\s+20\d\d$/i.test(name))out.push(...parse(wb.Sheets[name],name))}if(!out.length)throw Error('No monthly investigation sheets found');let old=new Set(selected);records=out;let months=[...new Set(out.map(r=>r.month))];selected=new Set([months.sort((a,b)=>monthKey(a)-monthKey(b)).at(-1)]);multiMode=false;lastFile=file;monthButtons();render();$('syncStatus').textContent='Data ready · '+new Date().toLocaleTimeString()}catch(e){$('syncStatus').textContent='Could not read workbook: '+e.message;console.error(e)}}
 $('upload').onchange=e=>{if(e.target.files[0])load(e.target.files[0])};$('toggle').onclick=()=>{let e=$('summary');e.classList.toggle('hidden');$('toggle').textContent=e.classList.contains('hidden')?'Management Summary ＋':'Management Summary −';$('toggle').setAttribute('aria-expanded',!e.classList.contains('hidden'))};
-$('refresh').onclick=()=>lastFile?load(lastFile):$('upload').click();
+$('refresh').onclick=()=>lastFile?load(lastFile):dbService?dbService.ref('dashboard').get().then(snap=>{if(snap.exists())restoreSnapshot(snap.val());else $('syncStatus').textContent='No published report yet'}).catch(e=>$('syncStatus').textContent='Refresh failed: '+e.message):$('syncStatus').textContent='Connecting to live data…';
 
 $('syncStatus').textContent='Upload Excel to display the latest month';
 
@@ -83,7 +83,24 @@ const firebaseConfig={
 };
 const adminPanel=document.createElement('div');adminPanel.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;padding:12px;background:#fff;border:1px solid #dce6f2;border-radius:12px';
 adminPanel.innerHTML='<strong style="color:#0c2b57">Publish to everyone</strong><input id="adminEmail" type="email" placeholder="Admin email" autocomplete="username" style="padding:10px;border:1px solid #ccd8e8;border-radius:8px;max-width:220px"><input id="adminPassword" type="password" placeholder="Password" autocomplete="current-password" style="padding:10px;border:1px solid #ccd8e8;border-radius:8px;max-width:190px"><button class="btn" id="adminLogin">Sign in</button><button class="btn" id="adminLogout" hidden>Sign out</button><button class="btn primary" id="publishLive" disabled>Publish Update</button><span id="adminStatus" style="font-size:13px;color:#58718f">Viewers do not need to sign in.</span>';
-$('upload').closest('label').parentElement.after(adminPanel);
+const uploadLabel=$('upload').closest('label');
+uploadLabel.hidden=true;
+uploadLabel.style.display='none';
+adminPanel.hidden=true;
+adminPanel.style.display='none';
+const adminToggle=document.createElement('button');
+adminToggle.className='btn';adminToggle.textContent='Admin';adminToggle.type='button';
+adminToggle.style.marginLeft='auto';
+uploadLabel.parentElement.insertBefore(adminToggle,uploadLabel);
+uploadLabel.parentElement.after(adminPanel);
+adminToggle.onclick=()=>{
+ const opening=adminPanel.hidden;
+ adminPanel.hidden=!opening;
+ adminPanel.style.display=opening?'flex':'none';
+ uploadLabel.hidden=!opening;
+ uploadLabel.style.display=opening?'inline-flex':'none';
+ adminToggle.textContent=opening?'Close Admin':'Admin';
+};
 let authService=null,dbService=null;
 try{
  if(!window.firebase)throw Error('Firebase scripts unavailable');
